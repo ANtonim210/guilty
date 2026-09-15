@@ -59,11 +59,11 @@ REACTIONS = [
     "💥 <b>Судья громко отрыгнул в микрофон:</b> «Ну всё, заседание официально становится веселым!»",
     "🤝 <b>Судья утер усы:</b> «Вот это донат! Назначаю тебя Почетным Взяточником этого чата!»",
     "🤌 <b>Судья оценил подгон:</b> «Еда сработала! Судья добрый, но вердикт уже запечатан!»",
-    "👑 <b>Судья закинулся едой:</b> «За такое подношение объявляю тебя неприконовенным на следующие 5 минут!»",
+    "👑 <b>Судья закинулся едой:</b> «За такое подношение объявляю тебя неприкосновенным на следующие 5 минут!»",
     "🚬 <i>Судья сыто откинулся на кресле:</i> «Чёрт, как же хорошо... Прощаю тебе твои грехи!»"
 ]
 
-# --- DUMMY SERVER ---
+# --- DUMMY SERVER ДЛЯ RENDER ---
 async def handle_ping(request):
     return web.Response(text="Court Bot Alive!")
 
@@ -81,7 +81,7 @@ async def start_dummy_server():
 async def start_cmd(message: types.Message):
     await message.answer(
         "🏛 <b>Добро пожаловать в Базарный Суд!</b>\n\n"
-        "• Вызвать суд: <code>/суд</code> в ответ (reply) на сообщение игрока.\n"
+        "• Вызвать суд: <code>/суд</code> (или <code>/суд причина</code>) в ответ на сообщение игрока.\n"
         "• Проверить баланс: <code>/кошелек</code>\n"
         "• Кормить и подкупать судью через кнопки под вердиктами!",
         parse_mode="HTML"
@@ -92,10 +92,13 @@ async def wallet_cmd(message: types.Message):
     coins = get_balance(message.from_user.id)
     await message.answer(f"💰 <b>Ваш капитал:</b> {coins} Судебных Издержек", parse_mode="HTML")
 
-@dp.message(Command("суд"))
+@dp.message(F.text.startswith("/суд"))
 async def court_cmd(message: types.Message):
     if not message.reply_to_message:
-        await message.answer("⚠️ Вызови <code>/суд</code> <b>в ответ (reply)</b> на сообщение того, с кем споришь!", parse_mode="HTML")
+        await message.answer(
+            "⚠️ Вызови <code>/суд</code> <b>в ответ (reply)</b> на сообщение того, с кем споришь!",
+            parse_mode="HTML"
+        )
         return
 
     accuser = message.from_user
@@ -109,27 +112,41 @@ async def court_cmd(message: types.Message):
     add_coins(accuser.id, 50)
     add_coins(defendant.id, 50)
 
-    # Текст сообщения
+    # Вытаскиваем аргументы после команды /суд
+    raw_args = message.text.split(maxsplit=1)
+    user_args = raw_args[1].strip() if len(raw_args) > 1 else ""
+
+    # Текст сообщения, на которое ответили
     target_text = message.reply_to_message.text or message.reply_to_message.caption or "[медиа-файл]"
     if len(target_text) > 40:
         target_text = target_text[:40] + "..."
 
     status = await message.answer("⚖️ <b>СУД ИДЁТ! ВСЕМ ВСТАТЬ!</b>", parse_mode="HTML")
     await asyncio.sleep(1.5)
-    
-    await status.edit_text(f"🔍 <i>Изучаем улику подсудимого:</i> «<u>{target_text}</u>»", parse_mode="HTML")
+
+    if user_args:
+        await status.edit_text(f"📋 <b>Иск от истца:</b> «<i>{user_args}</i>»\n🔍 <i>Изучаем улики...</i>", parse_mode="HTML")
+    else:
+        await status.edit_text(f"🔍 <i>Изучаем улику подсудимого:</i> «<u>{target_text}</u>»", parse_mode="HTML")
+        
     await asyncio.sleep(1.5)
 
     guilty_user = random.choice([accuser, defendant])
     victim_user = defendant if guilty_user == accuser else accuser
 
-    # Вердикты с чистым HTML
-    CRAZY_VERDICTS = [
-        f"⚖️ <b>ВЕРДИКТ:</b> {{guilty}} полностью виновен!\n👉 <b>Доказательство:</b> Фраза «<i>{target_text}</i>» признана полнейшей чушью!\n👉 <b>Наказание:</b> Обращаться к {{victim}} «Мой Господин» до конца дня.",
-        f"⚖️ <b>ВЕРДИКТ:</b> {{guilty}} пытался отмазаться фразой «<i>{target_text}</i>», но Судью не провести!\n👉 <b>Наказание:</b> Записать ГС в чат с извинениями прямо сейчас.",
-        f"⚖️ <b>ВЕРДИКТ:</b> Проанализировав сообщение «<i>{target_text}</i>», Суд решил, что {{victim}} невиновен, а {{guilty}} получает статус Главного Скуфа!",
-        f"⚖️ <b>ВЕРДИКТ:</b> Истец {{victim}} в шоке от фразы «<i>{target_text}</i>». {{guilty}} признается виновным в уничтожении чужой психики!"
-    ]
+    # Генерация вердикта
+    if user_args:
+        CRAZY_VERDICTS = [
+            f"⚖️ <b>ВЕРДИКТ:</b> По делу «<i>{user_args}</i>» виновным признаётся {{guilty}}!\n👉 <b>Наказание:</b> Обращаться к {{victim}} «Мой Господин» до конца дня.",
+            f"⚖️ <b>ВЕРДИКТ:</b> Суд рассмотрел иск «<i>{user_args}</i>» и решил: {{victim}} сам напросился, виновен ОН!",
+            f"⚖️ <b>ВЕРДИКТ:</b> Объявляется абсурд! Обвинение «<i>{user_args}</i>» признано гениальным, {{guilty}} назначается наказание: 15 отжиманий!"
+        ]
+    else:
+        CRAZY_VERDICTS = [
+            f"⚖️ <b>ВЕРДИКТ:</b> {{guilty}} полностью виновен!\n👉 <b>Доказательство:</b> Фраза «<i>{target_text}</i>» признана бредом.\n👉 <b>Наказание:</b> Обращаться к {{victim}} «Мой Господин» до конца дня.",
+            f"⚖️ <b>ВЕРДИКТ:</b> {{guilty}} пытался отмазаться фразой «<i>{target_text}</i>», но Судью не провести!\n👉 <b>Наказание:</b> Записать ГС в чат с извинениями.",
+            f"⚖️ <b>ВЕРДИКТ:</b> Проанализировав сообщение «<i>{target_text}</i>», Суд решил, что {{victim}} невиновен, а {{guilty}} получает статус Главного Скуфа!"
+        ]
 
     verdict_template = random.choice(CRAZY_VERDICTS)
     verdict_text = verdict_template.format(
@@ -144,7 +161,6 @@ async def court_cmd(message: types.Message):
 
     treat = random.choice(TREATS)
     
-    # Две кнопки: Подношение и Перекуп суда
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"{treat['name']} ({treat['cost']} к.)", callback_data=f"buy_{treat['cost']}_{treat['name']}")],
         [InlineKeyboardButton(text=f"🚨 Перекупить Суд (100 коинов)", callback_data=f"bribe_{guilty_user.id}_{victim_user.id}")]
@@ -178,10 +194,9 @@ async def process_treat(call: types.CallbackQuery):
 @dp.callback_query(F.data.startswith("bribe_"))
 async def process_bribe(call: types.CallbackQuery):
     user_id = call.from_user.id
-    _, old_guilty_id, old_victim_id = call.data.split("_")
     
     if get_balance(user_id) < 100:
-        await call.answer("❌ Перекуп стоит 100 коинов! У тебя недосчата!", show_alert=True)
+        await call.answer("❌ Перекуп стоит 100 коинов! У тебя недостача!", show_alert=True)
         return
 
     add_coins(user_id, -100)
@@ -190,7 +205,7 @@ async def process_bribe(call: types.CallbackQuery):
     await call.message.edit_text(
         f"🚨 <b>СУДЬЯ КОРРУМПИРОВАН!</b> 🚨\n\n"
         f"Игрок {call.from_user.mention_html()} занёс Судье <b>100 коинов</b> в конверте!\n\n"
-        f"⚖️ <b>НОВЫЙ ВЕРДИКТ:</b> Предыдущее решение аннулировано! Теперь виновным официально признаётся тот, кто радовался больше всех!",
+        f"⚖️ <b>НОВЫЙ ВЕРДИКТ:</b> Предыдущее решение аннулировано! Теперь виновным официально признаётся тот, кто подал жалобу!",
         parse_mode="HTML"
     )
 
